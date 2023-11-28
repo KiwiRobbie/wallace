@@ -33,5 +33,11 @@ name = "basic"
 [[bin]]
 name = "ecs"
 
+[[bin]]
+name = "test"
+
 [[test]]
-name = "rectangle"
+name = "aabb_2d"
+
+[[test]]
+name = "aabb_3d"
