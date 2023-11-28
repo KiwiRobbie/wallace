@@ -17,6 +17,7 @@ use azalea::{
         ComputePath, ExecutingPath, GotoEvent, StopPathfindingEvent,
     },
     prelude::*,
+    protocol::packets::game::clientbound_block_event_packet::ClientboundBlockEventPacket,
     world::{InstanceContainer, InstanceName, MinecraftEntityId},
     BlockPos, PlayerInfo,
 };
@@ -140,6 +141,8 @@ fn login_system(
     }
 }
 
+fn observe_block_updates(ev_block_updates: EventReader<ClientboundBlockEventPacket>) {}
+
 #[derive(Component)]
 struct FollowTargetMarker;
 
@@ -207,7 +210,7 @@ fn chat_follow_system(
                 Some("clear") if cmd.peek().is_none() => {
                     debug_vis
                         .tx
-                        .blocking_send(InboundDebugVisEvent::ClearCollision)
+                        .blocking_send(InboundDebugVisEvent::Clear)
                         .unwrap();
                 }
                 Some("shape") => {

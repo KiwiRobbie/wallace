@@ -1,6 +1,5 @@
 use azalea::core::aabb::AABB;
 use bevy::{math::vec3, prelude::*, utils::HashMap};
-use bevy_rapier3d::na::coordinates::X;
 use tokio::sync::mpsc::{Receiver, Sender};
 use wallace::tools::mesh_builder::MeshBuilder;
 
@@ -53,10 +52,11 @@ fn debug_vis_system(
                     z: pos.2 as f32,
                 });
             }
-            InboundDebugVisEvent::ClearCollision => {
+            InboundDebugVisEvent::Clear => {
                 for entity in q_collision_vis.iter() {
                     commands.entity(entity).despawn();
                 }
+                bot_paths.clear();
             }
             InboundDebugVisEvent::AddCollisions { blocks } => {
                 let mut collider_mesh_builder = MeshBuilder::new();
@@ -84,10 +84,10 @@ fn debug_vis_system(
                         nav_mesh_builder.add_mesh(
                             &shape::Box {
                                 min_x: aabb.min_x as f32 - 0.3f32,
-                                min_y: aabb.min_y as f32 - 0.8f32,
+                                min_y: aabb.min_y as f32 - 1.8f32,
                                 min_z: aabb.min_z as f32 - 0.3f32,
                                 max_x: aabb.max_x as f32 + 0.3f32,
-                                max_y: aabb.max_y as f32 + 1.0f32,
+                                max_y: aabb.max_y as f32 + 0.0f32,
                                 max_z: aabb.max_z as f32 + 0.3f32,
                             }
                             .into(),
@@ -144,7 +144,7 @@ pub struct DebugBlock {
 }
 
 pub enum InboundDebugVisEvent {
-    ClearCollision,
+    Clear,
     AddCollisions {
         blocks: Vec<DebugBlock>,
     },
