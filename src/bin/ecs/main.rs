@@ -2,8 +2,7 @@ use azalea_physics::collision::BlockWithShape;
 
 use azalea::{
     app::{Plugin, Update},
-    chat::{ChatPacket, ChatReceivedEvent, SendChatEvent},
-    core::aabb::AABB,
+    chat::{ChatPacket, ChatReceivedEvent},
     ecs::{
         entity::Entity,
         event::{EventReader, EventWriter},
@@ -14,12 +13,11 @@ use azalea::{
     pathfinder::{
         goals::BlockPosGoal,
         moves::{self},
-        ComputePath, ExecutingPath, GotoEvent, StopPathfindingEvent,
+        ComputePath, GotoEvent, StopPathfindingEvent,
     },
     prelude::*,
-    protocol::packets::game::clientbound_block_event_packet::ClientboundBlockEventPacket,
     world::{InstanceContainer, InstanceName, MinecraftEntityId},
-    BlockPos, PlayerInfo,
+    BlockPos,
 };
 use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
 use std::sync::{Arc, Mutex};
@@ -49,7 +47,7 @@ fn main() {
                     owner: OWNER,
                     debug: Mutex::new(Some(DebugVisChannels {
                         tx: bot_tx,
-                        rx: bot_rx,
+                        _rx: bot_rx,
                     })),
                 })
                 .start(account, "127.0.0.1")
@@ -75,7 +73,7 @@ fn main() {
 #[derive(Resource)]
 struct DebugVisChannels {
     tx: Sender<InboundDebugVisEvent>,
-    rx: Receiver<OutboundDebugVisEvent>,
+    _rx: Receiver<OutboundDebugVisEvent>,
 }
 
 struct ChatControlPlugin {
@@ -130,7 +128,7 @@ struct BotMarker;
 fn login_system(
     mut commands: Commands,
     query: Query<Entity, (Added<MinecraftEntityId>, With<LocalEntity>)>,
-    mut chat_events: EventWriter<SendChatEvent>,
+    // mut chat_events: EventWriter<SendChatEvent>,
 ) {
     for entity_id in &query {
         commands.entity(entity_id).insert(BotMarker);
@@ -140,8 +138,6 @@ fn login_system(
         // });
     }
 }
-
-fn observe_block_updates(ev_block_updates: EventReader<ClientboundBlockEventPacket>) {}
 
 #[derive(Component)]
 struct FollowTargetMarker;
@@ -277,16 +273,12 @@ fn chat_follow_system(
 
 fn follow_system(
     q_computing: Query<Entity, With<ComputePath>>,
-    q_pathfinding: Query<Entity, With<ExecutingPath>>,
     q_target: Query<&Position, With<FollowTargetMarker>>,
     q_bot: Query<Entity, With<BotMarker>>,
     // mut ev_stop: EventWriter<StopPathfindingEvent>,
     mut ev_goto: EventWriter<GotoEvent>,
 ) {
-    let computing = q_computing.iter().len();
-    let pathfinding = q_pathfinding.iter().len();
-
-    if computing == 0 {
+    if q_computing.iter().len() == 0 {
         if let Ok(pos) = q_target.get_single() {
             for bot_entity in q_bot.iter() {
                 ev_goto.send(GotoEvent {
@@ -297,169 +289,4 @@ fn follow_system(
             }
         }
     }
-    // if computing > 1 {
-    //     for entity in q_computing.iter().chain(q_pathfinding.iter()) {
-    //         ev_stop.send(StopPathfindingEvent {
-    //             entity,
-    //             force: true,
-    //         })
-    //     }
-    // }
-    // print!(
-    //     "{}{} computing, pathfinding {}",
-    //     cursor::Goto(1, 1),
-    //     computing,
-    //     pathfinding,
-    // );
 }
-
-// async fn handle(mut bot: Client, event: Event, state: State) -> anyhow::Result<()> {
-//     match event {
-//         Event::Login => {
-//             // bot.chat("/register N333LE744WV5RBNW N333LE744WV5RBNW");
-//             bot.chat("/login N333LE744WV5RBNW");
-//         }
-
-//         Event::Chat(m) => match m {
-//             ChatPacket::Player(m) => {
-//                 if m.sender.as_bytes() == &OWNER {
-//                     let msg = m.content();
-//                     println!("{}", msg);
-//                     if let Some(target) = m.content().to_ansi().strip_prefix("goto ") {
-//                         if let Some((x, z)) = target.split_once(" ") {
-//                             if let (Ok(x), Ok(z)) = (x.parse(), z.parse()) {
-//                                 bot.goto(XZGoal { x, z })
-//                             }
-//                         }
-//                     } else {
-//                         println!("Malformed goto!");
-//                     }
-
-//                     if m.content().to_ansi() == "come" {
-//                         println!("coming!");
-//                         let sender_uuid = m.sender;
-//                         if let Some(sender_entity) = bot
-//                             .entity_by::<With<Player>, (&GameProfileComponent,)>(
-//                                 |(profile,): &(&GameProfileComponent,)| profile.uuid == sender_uuid,
-//                             )
-//                         {
-//                             let goal = bot.entity_component::<Position>(sender_entity).into();
-//                             bot.goto(BlockPosGoal(goal))
-//                         } else {
-//                             println!("Couldn't find player {:?}", sender_uuid);
-//                         }
-//                     }
-
-//                     if m.content().to_ansi() == "find bed" {
-//                         println!("finding bed!");
-
-//                         let world = bot.world();
-//                         let world = world.read();
-
-//                         let beds: [BlockState; 16] = [
-//                             Block::WhiteBed.into(),
-//                             Block::OrangeBed.into(),
-//                             Block::MagentaBed.into(),
-//                             Block::LightBlueBed.into(),
-//                             Block::YellowBed.into(),
-//                             Block::LimeBed.into(),
-//                             Block::PinkBed.into(),
-//                             Block::GrayBed.into(),
-//                             Block::LightGrayBed.into(),
-//                             Block::CyanBed.into(),
-//                             Block::PurpleBed.into(),
-//                             Block::BlueBed.into(),
-//                             Block::BrownBed.into(),
-//                             Block::GreenBed.into(),
-//                             Block::RedBed.into(),
-//                             Block::BlackBed.into(),
-//                         ];
-
-//                         let bed_block_states: BlockStates = BlockStates { set: beds.into() };
-//                         if let Some(bed_pos) = world.find_block(bot.position(), &bed_block_states) {
-//                             bot.goto(BlockPosGoal(bed_pos));
-//                             bot.chat(format!("Found bed at {bed_pos:?}").as_str());
-//                         }
-//                     }
-
-//                     if m.content().to_ansi() == "sleep" {
-//                         println!("sleeping!");
-
-//                         let world = bot.world();
-//                         let world = world.read();
-
-//                         let beds: [BlockState; 16] = [
-//                             Block::WhiteBed.into(),
-//                             Block::OrangeBed.into(),
-//                             Block::MagentaBed.into(),
-//                             Block::LightBlueBed.into(),
-//                             Block::YellowBed.into(),
-//                             Block::LimeBed.into(),
-//                             Block::PinkBed.into(),
-//                             Block::GrayBed.into(),
-//                             Block::LightGrayBed.into(),
-//                             Block::CyanBed.into(),
-//                             Block::PurpleBed.into(),
-//                             Block::BlueBed.into(),
-//                             Block::BrownBed.into(),
-//                             Block::GreenBed.into(),
-//                             Block::RedBed.into(),
-//                             Block::BlackBed.into(),
-//                         ];
-
-//                         let bed_block_states: BlockStates = BlockStates { set: beds.into() };
-//                         if let Some(bed_pos) = world.find_block(bot.position(), &bed_block_states) {
-//                             bot.look_at(
-//                                 bed_pos.to_vec3_floored()
-//                                     + Vec3 {
-//                                         x: 0.5,
-//                                         y: 0.5,
-//                                         z: 0.5,
-//                                     },
-//                             );
-//                             bot.block_interact(bed_pos);
-//                         }
-//                     }
-
-//                     if m.content().to_ansi() == "follow" {
-//                         *state.following.lock() = true;
-//                     }
-//                     if m.content().to_ansi() == "stop" {
-//                         *state.following.lock() = false;
-//                         bot.stop_pathfinding();
-//                     }
-//                 }
-//             }
-//             _ => {}
-//         },
-//         Event::Tick => {
-//             let mut following = state.following.lock();
-//             if *following {
-//                 let computing = {
-//                     let mut ecs = bot.ecs.lock();
-//                     ecs.query::<(Entity, &mut ComputePath)>().iter(&ecs).len() > 0
-//                 };
-
-//                 if !computing {
-//                     if let Some(sender_entity) = bot
-//                         .entity_by::<With<Player>, (&GameProfileComponent,)>(
-//                             |(profile,): &(&GameProfileComponent,)| {
-//                                 profile.uuid.as_bytes() == &OWNER
-//                             },
-//                         )
-//                     {
-//                         println!("updating path");
-//                         let goal = bot.entity_component::<Position>(sender_entity).into();
-//                         bot.goto(BlockPosGoal(goal));
-//                     } else {
-//                         println!("Couldn't find player!");
-//                         *following = false;
-//                     }
-//                 }
-//             }
-//         }
-//         _ => {}
-//     }
-
-//     Ok(())
-// }

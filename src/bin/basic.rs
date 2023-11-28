@@ -1,23 +1,20 @@
-//! A bot that logs chat messages sent in the server to the console.
-
 use std::sync::Arc;
 
 use azalea::{
     blocks::{BlockState, BlockStates},
     chat::ChatPacket,
-    ecs::{entity::Entity, query::With, system::Query},
-    entity::{metadata::Player, EntityUuid, Position},
+    ecs::{entity::Entity, query::With},
+    entity::{metadata::Player, Position},
     pathfinder::{
         goals::{BlockPosGoal, XZGoal},
         ComputePath,
     },
     prelude::*,
-    registry::tags::blocks::AZALEA_GROWS_ON,
     GameProfileComponent,
 };
 use azalea::{registry::Block, Vec3};
 use parking_lot::Mutex;
-use uuid::Uuid;
+
 #[tokio::main]
 async fn main() {
     let account = Account::offline("CGO55CREGY");

@@ -133,7 +133,7 @@ fn pan_orbit_camera(
                     pan += cursor_pos - last_pos;
                     dragging = true;
                 }
-                for ev in ev_scroll.iter() {
+                for ev in ev_scroll.read() {
                     scroll += ev.y;
                 }
             }
@@ -290,7 +290,7 @@ fn align_view_pan_orbit_camera(
         return;
     };
 
-    if let Some(AlignViewEvent(dir)) = ev_align_view.iter().last() {
+    if let Some(AlignViewEvent(dir)) = ev_align_view.read().last() {
         transform.look_to(*dir, Vec3::Y);
     }
 

@@ -1,9 +1,6 @@
 use bevy::{
     prelude::*,
-    render::{
-        mesh::{Indices, MeshVertexAttribute, VertexAttributeValues},
-        render_resource::VertexFormat,
-    },
+    render::mesh::{Indices, VertexAttributeValues},
 };
 
 pub struct MeshBuilder {

@@ -149,7 +149,7 @@ fn fps_camera_mouse(
         return;
     }
 
-    for MouseMotion { delta } in ev_motion.iter() {
+    for MouseMotion { delta } in ev_motion.read() {
         for (settings, mut transform) in q_camera.iter_mut() {
             let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
 
