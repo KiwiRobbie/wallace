@@ -46,17 +46,17 @@ fn main() {
 
     {
         println!("\nCOMPLEX");
-        let b = Rect {
+        let a = Rect {
             min_x: 0.0,
-            min_y: -2.0,
+            min_y: 0.0,
             max_x: 2.0,
             max_y: 2.0,
         };
-        let a = Rect {
+        let b = Rect {
             min_x: 1.0,
-            min_y: -1.0,
+            min_y: 1.0,
             max_x: 3.0,
-            max_y: 1.0,
+            max_y: 3.0,
         };
 
         const EXPECTED_AREA: f32 = 10.0f32;
@@ -66,10 +66,37 @@ fn main() {
         let area: f32 = result.iter().map(|rect| rect.area()).sum();
         assert_eq!(EXPECTED_AREA, area);
     }
+
+    // {
+    //     println!("\nCOMPLEX");
+    //     let b = Rect {
+    //         min_x: 0.0,
+    //         min_y: -2.0,
+    //         max_x: 2.0,
+    //         max_y: 2.0,
+    //     };
+    //     let a = Rect {
+    //         min_x: 1.0,
+    //         min_y: -1.0,
+    //         max_x: 3.0,
+    //         max_y: 1.0,
+    //     };
+
+    //     const EXPECTED_AREA: f32 = 10.0f32;
+
+    //     let result = union(&a, &b);
+    //     dbg!(&result);
+    //     let area: f32 = result.iter().map(|rect| rect.area()).sum();
+    //     assert_eq!(EXPECTED_AREA, area);
+    // }
 }
 
 impl Rect {
     fn contains(&self, p: &Point) -> bool {
+        return self.min_x < p.x && self.min_y < p.y && self.max_x > p.x && self.max_y > p.y;
+    }
+
+    fn contains_strict(&self, p: &Point) -> bool {
         return self.min_x <= p.x && self.min_y <= p.y && self.max_x >= p.x && self.max_y >= p.y;
     }
 
@@ -203,12 +230,16 @@ fn split(a: &Rect, b: &Rect) -> Option<(Rect, Rect)> {
 
             if intersection {
                 let value = a_array[dir][axis];
+                println!("splitting on axis={} dir={} t={}", axis, dir, value);
 
                 let mut b_array = b_array.clone();
                 let mut c_array = b_array.clone();
 
                 b_array[dir][axis] = value;
                 c_array[1 - dir][axis] = value;
+
+                dbg!(b_array);
+                dbg!(c_array);
 
                 return Some((b_array.into(), c_array.into()));
             }
