@@ -1,4 +1,5 @@
-use bevy::math::{IVec2, IVec3, UVec3};
+use bevy::math::{IVec2, IVec3, UVec2, UVec3, Vec2, Vec3};
+use bevy_rapier3d::na::ComplexField;
 use itertools::Itertools;
 
 use super::aabb_2d::Aabb2D;
@@ -16,22 +17,77 @@ pub const SUB_CHUNK_SIZE: IVec3 = IVec3 {
 // Index order: data[z][x][y]
 
 pub struct SubChunkNavMesh {
-    pub layers: Box<[NavMeshLayer]>,
+    pub location: IVec3,
+    pub floor: Box<[NavMeshLayer]>,
+    pub ceiling: Box<[NavMeshLayer]>,
 }
 
+#[derive(Debug)]
 pub enum NavMeshLayerType {
     Floor,
     Ceiling,
 }
-struct NavMeshLayer {
-    pub layer_type: NavMeshLayerType,
+
+#[derive(Debug)]
+pub struct NavMeshLayer {
     pub height: f32,
     pub nodes: Vec<NavMeshNode>,
-    pub blocks: Box<[[OptionalMany<usize>; CHUNK_WIDTH]; CHUNK_WIDTH]>,
+    pub blocks: Box<[[Vec<usize>; CHUNK_WIDTH]; CHUNK_WIDTH]>,
 }
 
 impl NavMeshLayer {
-    fn insert(&mut self, node: Aabb3D, pos: IVec2) {}
+    fn insert(&mut self, aabb: Aabb2D, pos: UVec2) {
+        let node = NavMeshNode {
+            aabb,
+            pos,
+            adjacent: vec![],
+        };
+        self.blocks[pos.y as usize][pos.x as usize].push(self.nodes.len());
+        self.nodes.push(node);
+    }
+
+    fn cut(&mut self, pos: UVec2, cutting_surface: Aabb2D) {
+        println!("PASS");
+        // TODO: MAKE NOT AWFUL THIS IS A WAR CRIME
+        // REMEMBER TO FIX AFTER self.blocks
+
+        let mut dirty = vec![];
+        std::mem::swap(&mut self.blocks[pos.y as usize][pos.x as usize], &mut dirty);
+        let mut split = vec![];
+
+        for node in dirty.iter().map(|index| self.nodes[*index].clone()) {
+            split.extend(node.aabb.subtract(&cutting_surface).into_iter());
+        }
+
+        let split = split.into_iter();
+        let mut dirty = dirty.into_iter();
+
+        for new in split {
+            if let Some(dirty_index) = dirty.next() {
+                self.nodes[dirty_index] = NavMeshNode {
+                    aabb: new,
+                    adjacent: vec![],
+                    pos,
+                };
+                self.blocks[pos.y as usize][pos.x as usize].push(dirty_index);
+            } else {
+                self.blocks[pos.y as usize][pos.x as usize].push(self.nodes.len());
+                self.nodes.push(NavMeshNode {
+                    aabb: new,
+                    adjacent: vec![],
+                    pos,
+                });
+            }
+        }
+        for dirty_index in dirty.sorted().rev() {
+            for block_index in self.blocks.iter_mut().flatten().flatten() {
+                if *block_index > dirty_index {
+                    *block_index -= 1;
+                }
+            }
+            self.nodes.remove(dirty_index);
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -41,8 +97,12 @@ pub enum OptionalMany<T> {
     Multiple(Box<[T]>),
 }
 
-impl<T> OptionalMany<T> {
+impl<'a, T> OptionalMany<T> {
     pub const NONE: Self = Self::None;
+
+    pub fn iter(&'a self) -> impl Iterator<Item = &'a T> {
+        Into::<&'a [T]>::into(self).iter()
+    }
 }
 
 impl<T: PartialEq> OptionalMany<T> {
@@ -82,11 +142,14 @@ impl<'a, T> Into<&'a [T]> for &'a OptionalMany<T> {
     }
 }
 
-struct NavMeshNode {
-    aabb: Aabb2D,
-    adjacent: Box<[NavMeshAdjacent]>,
+#[derive(Debug, Clone)]
+pub struct NavMeshNode {
+    pub aabb: Aabb2D,
+    pub pos: UVec2,
+    pub adjacent: Vec<NavMeshAdjacent>,
 }
 
+#[derive(Debug, Clone)]
 enum NavMeshAdjacent {
     Superset {
         index: usize,
@@ -108,7 +171,7 @@ pub struct SubChunk {
     pub location: IVec3,
     aabbs: Box<[[[OptionalMany<Aabb3D>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH]>,
     block_collision_mask: Box<[[u16; CHUNK_WIDTH]; CHUNK_WIDTH]>,
-    block_top_mask: Box<[[u16; CHUNK_WIDTH]; CHUNK_WIDTH]>,
+    block_floor_mask: Box<[[u16; CHUNK_WIDTH]; CHUNK_WIDTH]>,
     full_block_mask: Box<[[u16; CHUNK_WIDTH]; CHUNK_WIDTH]>,
 }
 
@@ -140,7 +203,7 @@ impl SubChunk {
         let mut chunk = Self {
             location,
             aabbs,
-            block_top_mask: collision_blocks.clone(),
+            block_floor_mask: collision_blocks.clone(),
             block_collision_mask: collision_blocks,
             full_block_mask: full_blocks,
         };
@@ -148,7 +211,7 @@ impl SubChunk {
         chunk
     }
 
-    pub fn iter_top(&self) -> impl Iterator<Item = (UVec3, &[Aabb3D])> {
+    pub fn iter_floor(&self) -> impl Iterator<Item = (UVec3, &[Aabb3D])> {
         [(0..CHUNK_WIDTH), (0..CHUNK_WIDTH), (0..SUB_CHUNK_HEIGHT)]
             .into_iter()
             .multi_cartesian_product()
@@ -157,7 +220,7 @@ impl SubChunk {
                 let y = value[1];
                 let x = value[2];
 
-                if self.block_top_mask[z][x] >> y & 1 == 1 {
+                if self.block_floor_mask[z][x] >> y & 1 == 1 {
                     Some((
                         UVec3 {
                             x: x as u32,
@@ -170,6 +233,11 @@ impl SubChunk {
                     None
                 }
             })
+    }
+
+    pub fn iter_ceiling(&self) -> impl Iterator<Item = (UVec3, &[Aabb3D])> {
+        // TODO: ADD MASKS
+        self.iter_collisions()
     }
 
     pub fn iter_collisions(&self) -> impl Iterator<Item = (UVec3, &[Aabb3D])> {
@@ -191,28 +259,65 @@ impl SubChunk {
             })
     }
 
-    pub fn build_nav_mesh(&self) -> () {
-        let mut layers: Vec<NavMeshLayer> = vec![];
+    pub fn build_nav_mesh(&self) -> SubChunkNavMesh {
+        let mut ceiling: Vec<NavMeshLayer> = vec![];
+        let mut floor: Vec<NavMeshLayer> = vec![];
 
-        for (z, plane) in self.aabbs.iter().enumerate() {
-            for (x, column) in plane.iter().enumerate() {
-                for (y, block) in column.iter().enumerate() {
-                    match block {
-                        OptionalMany::None => {}
-                        OptionalMany::Single(aabb) => {}
-                        OptionalMany::Multiple(aabbs) => {}
-                    }
-                }
+        for (pos, block) in self.iter_floor() {
+            for aabb in block.iter() {
+                Self::insert_aabb_into_layers(&mut floor, aabb, pos, NavMeshLayerType::Floor);
             }
+        }
+        for (pos, block) in self.iter_ceiling() {
+            for aabb in block.iter() {
+                Self::insert_aabb_into_layers(&mut ceiling, aabb, pos, NavMeshLayerType::Ceiling);
+            }
+        }
+
+        // self.cut_floor(&mut floor);
+
+        SubChunkNavMesh {
+            location: self.location,
+            floor: floor.into(),
+            ceiling: ceiling.into(),
         }
     }
 
     fn apply_full_block_occlusion(&mut self) {
         for z in 0..CHUNK_WIDTH {
             for x in 0..CHUNK_WIDTH {
-                self.block_top_mask[z][x] = !(self.full_block_mask[z][x] >> 1)
+                self.block_floor_mask[z][x] = !(self.full_block_mask[z][x] >> 1)
                     & !(self.full_block_mask[z][x] >> 2)
                     & self.block_collision_mask[z][x];
+            }
+        }
+    }
+
+    fn cut_floor(&self, floor: &mut Vec<NavMeshLayer>) {
+        for layer in floor {
+            let height = layer.height;
+            let cut_indices = (height as usize)..((height + 1.8).ceil() as usize);
+
+            for cut_layer in cut_indices.clone() {
+                for z in 0..CHUNK_WIDTH {
+                    for x in 0..CHUNK_WIDTH {
+                        for aabb in self.aabbs[z][x][cut_layer].iter() {
+                            if ((cut_layer as f32 + aabb.min_y() - 1.8)
+                                ..(cut_layer as f32 + aabb.max_y()))
+                                .contains(&height)
+                            {
+                                layer.cut(
+                                    UVec2 {
+                                        x: x as u32,
+                                        y: z as u32,
+                                    },
+                                    aabb.surface_projection(1), // .inflate(Vec2 { x: 0.0, y: 0.0 })
+                                                                // .translate(Vec2 { x: 0.0, y: 0.0 }),
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -224,10 +329,16 @@ impl SubChunk {
 
     fn insert_aabb_into_layers(
         layers: &mut Vec<NavMeshLayer>,
-        aabb: Aabb3D,
-        block_location: IVec3,
+        aabb: &Aabb3D,
+        block_location: UVec3,
+        layer_type: NavMeshLayerType,
     ) {
-        let height = block_location.y as f32 + aabb.max_y();
+        let height = block_location.y as f32
+            + match layer_type {
+                NavMeshLayerType::Ceiling => aabb.min_y(),
+                NavMeshLayerType::Floor => aabb.max_y(),
+            };
+
         let surface = aabb.surface_projection(1);
 
         // TODO: Optimise by using initial bounds for search (can't change by more that 1.5 blocks)
@@ -235,15 +346,14 @@ impl SubChunk {
             Err(index) => layers.insert(
                 index,
                 NavMeshLayer {
-                    layer_type: NavMeshLayerType::Floor,
-                    height: height,
+                    height,
                     nodes: vec![],
                     blocks: Default::default(),
                 },
             ),
             Ok(index) => layers[index].insert(
-                aabb,
-                IVec2 {
+                surface.clone(),
+                UVec2 {
                     x: block_location.x,
                     y: block_location.z,
                 },

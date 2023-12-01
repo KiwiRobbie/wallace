@@ -306,10 +306,16 @@ fn chat_follow_system(
                             }
                         }
 
-                        println!("Building sub chunk");
+                        println!("Building Sub Chunk");
 
                         let sub_chunk = SubChunk::new(sub_chunk_index, sub_chunk_aabb_data);
+                        let nav = sub_chunk.build_nav_mesh();
+                        println!("Built Nav Mesh");
 
+                        debug_vis
+                            .tx
+                            .blocking_send(InboundDebugVisEvent::NavMesh { sub_chunk_nav: nav })
+                            .unwrap();
                         debug_vis
                             .tx
                             .blocking_send(InboundDebugVisEvent::SubChunk { sub_chunk })

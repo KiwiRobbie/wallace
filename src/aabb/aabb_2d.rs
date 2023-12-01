@@ -1,3 +1,5 @@
+use bevy::math::Vec2;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Point2D {
     pub x: f32,
@@ -141,6 +143,69 @@ impl Aabb2D {
 
         // Rectangles must have being disjoint
         return vec![a.clone(), b.clone()];
+    }
+
+    pub fn validate(self) -> Option<Self> {
+        if self.min_x < self.max_x && self.min_y < self.max_y {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub fn subtract(&self, other: &Self) -> Vec<Aabb2D> {
+        // [       ]
+        // [ ] X [ ]
+        // [       ]
+
+        let top = Self {
+            min_x: self.min_x,
+            max_x: self.max_x,
+            max_y: self.max_y,
+            min_y: other.max_y,
+        }
+        .validate();
+        let bottom = Self {
+            min_x: self.min_x,
+            max_x: self.max_x,
+            min_y: self.min_y,
+            max_y: other.min_y,
+        }
+        .validate();
+        let left = Self {
+            min_x: self.min_x,
+            max_x: other.min_x,
+            max_y: self.max_y.min(other.max_y),
+            min_y: self.min_y.max(other.min_y),
+        }
+        .validate();
+        let right = Self {
+            min_x: other.max_x,
+            max_x: self.max_x,
+            max_y: self.max_y.min(other.max_y),
+            min_y: self.min_y.max(other.min_y),
+        }
+        .validate();
+
+        let valid = [top, bottom, left, right].into_iter().flatten();
+        return valid.collect::<Vec<Aabb2D>>();
+    }
+
+    pub fn inflate(&self, amount: Vec2) -> Self {
+        Self {
+            min_x: self.min_x - amount.x,
+            min_y: self.min_y - amount.x,
+            max_x: self.max_x + amount.y,
+            max_y: self.max_y + amount.y,
+        }
+    }
+    pub fn translate(&self, translation: Vec2) -> Self {
+        Self {
+            min_x: self.min_x + translation.x,
+            min_y: self.min_y + translation.x,
+            max_x: self.max_x + translation.y,
+            max_y: self.max_y + translation.y,
+        }
     }
 }
 

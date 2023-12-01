@@ -4,7 +4,9 @@ use azalea::core::aabb::AABB;
 use bevy::{math::vec3, prelude::*, utils::HashMap};
 use tokio::sync::mpsc::{Receiver, Sender};
 use wallace::{
-    aabb::optimise_world::{SubChunk, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE},
+    aabb::optimise_world::{
+        SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
+    },
     tools::mesh_builder::MeshBuilder,
 };
 
@@ -138,39 +140,34 @@ fn debug_vis_system(
                     },
                 ));
             }
-            InboundDebugVisEvent::SubChunk { sub_chunk } => {
-                println!("[VIS] Received sub chunk");
+            InboundDebugVisEvent::NavMesh { sub_chunk_nav } => {
                 let mut collider_mesh_builder = MeshBuilder::new();
-                for (UVec3 { x, y, z }, aabbs) in sub_chunk.iter_top() {
-                    for aabb in aabbs {
+
+                for layer in sub_chunk_nav.floor.iter() {
+                    let y = layer.height;
+                    for node in layer.nodes.iter() {
+                        let aabb = &node.aabb;
+                        let (x, z) = (node.pos.x, node.pos.y);
+
                         let transform = Transform::from_translation(Vec3 {
                             x: x as f32 + 0.5,
-                            y: y as f32 + aabb.max_y(),
+                            y,
                             z: z as f32 + 0.5,
                         });
 
                         let size = Vec2 {
-                            x: aabb.max_x() - aabb.min_x(),
-                            y: aabb.max_z() - aabb.min_z(),
+                            x: aabb.max_x - aabb.min_x,
+                            y: aabb.max_y - aabb.min_y,
                         };
 
                         collider_mesh_builder.add_mesh(
                             &shape::Quad { size, flip: false }.into(),
-                            transform * Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
+                            transform
+                                * Transform::from_rotation(
+                                    Quat::from_rotation_x(-PI / 2.0)
+                                        * Quat::from_rotation_z(-PI / 2.0),
+                                ),
                         );
-
-                        // collider_mesh_builder.add_mesh(
-                        //     &shape::Box {
-                        //         min_x: aabb.min_x(),
-                        //         min_y: aabb.min_y(),
-                        //         min_z: aabb.min_z(),
-                        //         max_x: aabb.max_x(),
-                        //         max_y: aabb.max_y(),
-                        //         max_z: aabb.max_z(),
-                        //     }
-                        //     .into(),
-                        //     transform,
-                        // );
                     }
                 }
 
@@ -192,32 +189,81 @@ fn debug_vis_system(
                     CollisionVisMarker,
                     PbrBundle {
                         mesh: meshes.add(mesh),
-                        material: materials.add(Color::rgb(0.2, 0.8, 0.2).into()),
+                        material: materials.add(Color::rgb(0.4, 0.6, 0.4).into()),
                         transform: Transform::from_translation(
-                            (sub_chunk.location * SUB_CHUNK_SIZE).as_vec3(),
+                            (sub_chunk_nav.location * SUB_CHUNK_SIZE).as_vec3(),
                         ),
                         ..default()
                     },
                 ));
+            }
+            InboundDebugVisEvent::SubChunk { sub_chunk } => {
+                // println!("[VIS] Received sub chunk");
+                // let mut collider_mesh_builder = MeshBuilder::new();
+                // for (UVec3 { x, y, z }, aabbs) in sub_chunk.iter_floor() {
+                //     for aabb in aabbs {
+                //         let transform = Transform::from_translation(Vec3 {
+                //             x: x as f32 + 0.5,
+                //             y: y as f32 + aabb.max_y(),
+                //             z: z as f32 + 0.5,
+                //         });
 
-                // commands.spawn((
+                //         let size = Vec2 {
+                //             x: aabb.max_x() - aabb.min_x(),
+                //             y: aabb.max_z() - aabb.min_z(),
+                //         };
+
+                //         collider_mesh_builder.add_mesh(
+                //             &shape::Quad { size, flip: false }.into(),
+                //             transform * Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
+                //         );
+                //     }
+                // }
+
+                // let mesh = collider_mesh_builder.build();
+                // let build_collider = mesh.count_vertices() > 0;
+
+                // let mut chunk_entity = commands.spawn(());
+
+                // if build_collider {
+                //     if let Some(collider) = bevy_rapier3d::prelude::Collider::from_bevy_mesh(
+                //         &mesh,
+                //         &bevy_rapier3d::prelude::ComputedColliderShape::TriMesh,
+                //     ) {
+                //         chunk_entity.insert(collider);
+                //     }
+                // }
+
+                // chunk_entity.insert((
                 //     CollisionVisMarker,
                 //     PbrBundle {
-                //         mesh: meshes.add(nav_mesh_builder.build()),
-                //         material: materials.add(StandardMaterial {
-                //             base_color: Color::Rgba {
-                //                 red: 0.8,
-                //                 green: 0.2,
-                //                 blue: 0.2,
-                //                 alpha: 0.25,
-                //             },
-                //             alpha_mode: AlphaMode::Blend,
-                //             ..Default::default()
-                //         }),
-
+                //         mesh: meshes.add(mesh),
+                //         material: materials.add(Color::rgb(0.2, 0.8, 0.2).into()),
+                //         transform: Transform::from_translation(
+                //             (sub_chunk.location * SUB_CHUNK_SIZE).as_vec3(),
+                //         ),
                 //         ..default()
                 //     },
                 // ));
+
+                // // commands.spawn((
+                // //     CollisionVisMarker,
+                // //     PbrBundle {
+                // //         mesh: meshes.add(nav_mesh_builder.build()),
+                // //         material: materials.add(StandardMaterial {
+                // //             base_color: Color::Rgba {
+                // //                 red: 0.8,
+                // //                 green: 0.2,
+                // //                 blue: 0.2,
+                // //                 alpha: 0.25,
+                // //             },
+                // //             alpha_mode: AlphaMode::Blend,
+                // //             ..Default::default()
+                // //         }),
+
+                // //         ..default()
+                // //     },
+                // // ));
             }
         }
     }
@@ -245,6 +291,9 @@ pub enum InboundDebugVisEvent {
     },
     SubChunk {
         sub_chunk: SubChunk,
+    },
+    NavMesh {
+        sub_chunk_nav: SubChunkNavMesh,
     },
 }
 pub enum OutboundDebugVisEvent {}
