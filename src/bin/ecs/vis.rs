@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use azalea::core::aabb::AABB;
-use bevy::{math::vec3, prelude::*, utils::HashMap};
+use bevy::{math::vec3, prelude::*, render::mesh::Indices, utils::HashMap};
 use tokio::sync::mpsc::{Receiver, Sender};
 use wallace::{
     aabb::optimise_world::{
@@ -46,29 +46,38 @@ fn setup(mut commands: Commands) {
 #[derive(Component)]
 struct CollisionVisMarker;
 
+struct PlayerPath {
+    pub bot: bool,
+    pub path: Vec<Vec3>,
+}
+
 fn debug_vis_system(
     mut commands: Commands,
     mut bot_channels: ResMut<BotDebugChannels>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut bot_paths: Local<HashMap<[u8; 16], Vec<Vec3>>>,
+    mut player_paths: Local<HashMap<[u8; 16], PlayerPath>>,
     mut gizmos: Gizmos,
     q_collision_vis: Query<Entity, With<CollisionVisMarker>>,
 ) {
     while let Ok(event) = bot_channels.rx.try_recv() {
         match event {
-            InboundDebugVisEvent::PlayerPosition { uuid, pos } => {
-                bot_paths.entry(uuid).or_insert(vec![]).push(Vec3 {
-                    x: pos.0 as f32,
-                    y: pos.1 as f32,
-                    z: pos.2 as f32,
-                });
+            InboundDebugVisEvent::PlayerPosition { uuid, pos, bot } => {
+                player_paths
+                    .entry(uuid)
+                    .or_insert(PlayerPath { bot, path: vec![] })
+                    .path
+                    .push(Vec3 {
+                        x: pos.0 as f32,
+                        y: pos.1 as f32,
+                        z: pos.2 as f32,
+                    });
             }
             InboundDebugVisEvent::Clear => {
                 for entity in q_collision_vis.iter() {
                     commands.entity(entity).despawn();
                 }
-                bot_paths.clear();
+                player_paths.clear();
             }
             InboundDebugVisEvent::AddCollisions { blocks } => {
                 let mut collider_mesh_builder = MeshBuilder::new();
@@ -141,41 +150,71 @@ fn debug_vis_system(
                 ));
             }
             InboundDebugVisEvent::NavMesh { sub_chunk_nav } => {
-                let mut collider_mesh_builder = MeshBuilder::new();
+                let mut positions: Vec<[f32; 3]> = vec![];
+                let mut indices: Vec<u32> = vec![];
+
+                let mut index: u32 = 0u32;
 
                 for layer in sub_chunk_nav.floor.iter() {
                     let y = layer.height;
                     for node in layer.nodes.iter() {
                         let aabb = &node.aabb;
-                        let (x, z) = (node.pos.x, node.pos.y);
-
-                        let transform = Transform::from_translation(Vec3 {
-                            x: x as f32 + 0.5,
+                        let pos = Vec3 {
+                            x: node.pos.x as f32,
                             y,
-                            z: z as f32 + 0.5,
-                        });
-
-                        let size = Vec2 {
-                            x: aabb.max_x - aabb.min_x,
-                            y: aabb.max_y - aabb.min_y,
+                            z: node.pos.y as f32,
                         };
 
-                        collider_mesh_builder.add_mesh(
-                            &shape::Quad { size, flip: false }.into(),
-                            transform
-                                * Transform::from_rotation(
-                                    Quat::from_rotation_x(-PI / 2.0)
-                                        * Quat::from_rotation_z(-PI / 2.0),
-                                ),
+                        positions.push(
+                            (pos + Vec3 {
+                                x: aabb.min_x,
+                                y: 0.0,
+                                z: aabb.min_y,
+                            })
+                            .to_array(),
                         );
+                        positions.push(
+                            (pos + Vec3 {
+                                x: aabb.min_x,
+                                y: 0.0,
+                                z: aabb.max_y,
+                            })
+                            .to_array(),
+                        );
+                        positions.push(
+                            (pos + Vec3 {
+                                x: aabb.max_x,
+                                y: 0.0,
+                                z: aabb.max_y,
+                            })
+                            .to_array(),
+                        );
+                        positions.push(
+                            (pos + Vec3 {
+                                x: aabb.max_x,
+                                y: 0.0,
+                                z: aabb.min_y,
+                            })
+                            .to_array(),
+                        );
+
+                        indices.extend([index, index + 1, index + 2, index + 2, index + 3, index]);
+                        index += 4;
                     }
                 }
-
-                let mesh = collider_mesh_builder.build();
-                let build_collider = mesh.count_vertices() > 0;
-
                 let mut chunk_entity = commands.spawn(());
 
+                let mut mesh =
+                    Mesh::new(bevy::render::render_resource::PrimitiveTopology::TriangleList);
+                mesh.insert_attribute(
+                    Mesh::ATTRIBUTE_NORMAL,
+                    vec![[0.0, 1.0, 0.0]; positions.len()],
+                );
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+
+                mesh.set_indices(Some(Indices::U32(indices)));
+
+                let build_collider = mesh.count_vertices() > 0;
                 if build_collider {
                     if let Some(collider) = bevy_rapier3d::prelude::Collider::from_bevy_mesh(
                         &mesh,
@@ -198,78 +237,42 @@ fn debug_vis_system(
                 ));
             }
             InboundDebugVisEvent::SubChunk { sub_chunk } => {
-                // println!("[VIS] Received sub chunk");
-                // let mut collider_mesh_builder = MeshBuilder::new();
-                // for (UVec3 { x, y, z }, aabbs) in sub_chunk.iter_floor() {
-                //     for aabb in aabbs {
-                //         let transform = Transform::from_translation(Vec3 {
-                //             x: x as f32 + 0.5,
-                //             y: y as f32 + aabb.max_y(),
-                //             z: z as f32 + 0.5,
-                //         });
+                let mut collider_mesh_builder = MeshBuilder::new();
 
-                //         let size = Vec2 {
-                //             x: aabb.max_x() - aabb.min_x(),
-                //             y: aabb.max_z() - aabb.min_z(),
-                //         };
+                for (pos, aabbs) in sub_chunk.iter_collisions() {
+                    for aabb in aabbs {
+                        collider_mesh_builder.add_mesh(
+                            &shape::Box {
+                                min_x: aabb.min_x() as f32,
+                                min_y: aabb.min_y() as f32,
+                                min_z: aabb.min_z() as f32,
+                                max_x: aabb.max_x() as f32,
+                                max_y: aabb.max_y() as f32,
+                                max_z: aabb.max_z() as f32,
+                            }
+                            .into(),
+                            Transform::from_translation(pos.as_vec3()),
+                        );
+                    }
+                }
 
-                //         collider_mesh_builder.add_mesh(
-                //             &shape::Quad { size, flip: false }.into(),
-                //             transform * Transform::from_rotation(Quat::from_rotation_x(-PI / 2.0)),
-                //         );
-                //     }
-                // }
-
-                // let mesh = collider_mesh_builder.build();
-                // let build_collider = mesh.count_vertices() > 0;
-
-                // let mut chunk_entity = commands.spawn(());
-
-                // if build_collider {
-                //     if let Some(collider) = bevy_rapier3d::prelude::Collider::from_bevy_mesh(
-                //         &mesh,
-                //         &bevy_rapier3d::prelude::ComputedColliderShape::TriMesh,
-                //     ) {
-                //         chunk_entity.insert(collider);
-                //     }
-                // }
-
-                // chunk_entity.insert((
-                //     CollisionVisMarker,
-                //     PbrBundle {
-                //         mesh: meshes.add(mesh),
-                //         material: materials.add(Color::rgb(0.2, 0.8, 0.2).into()),
-                //         transform: Transform::from_translation(
-                //             (sub_chunk.location * SUB_CHUNK_SIZE).as_vec3(),
-                //         ),
-                //         ..default()
-                //     },
-                // ));
-
-                // // commands.spawn((
-                // //     CollisionVisMarker,
-                // //     PbrBundle {
-                // //         mesh: meshes.add(nav_mesh_builder.build()),
-                // //         material: materials.add(StandardMaterial {
-                // //             base_color: Color::Rgba {
-                // //                 red: 0.8,
-                // //                 green: 0.2,
-                // //                 blue: 0.2,
-                // //                 alpha: 0.25,
-                // //             },
-                // //             alpha_mode: AlphaMode::Blend,
-                // //             ..Default::default()
-                // //         }),
-
-                // //         ..default()
-                // //     },
-                // // ));
+                commands.spawn((
+                    CollisionVisMarker,
+                    PbrBundle {
+                        mesh: meshes.add(collider_mesh_builder.build()),
+                        material: materials.add(Color::BLUE.into()),
+                        ..default()
+                    },
+                ));
             }
         }
     }
 
-    for path in bot_paths.values() {
-        gizmos.linestrip(path.iter().map(|p| p.clone()), Color::GREEN);
+    for player in player_paths.values() {
+        gizmos.linestrip(
+            player.path.iter().map(|p| p.clone()),
+            if player.bot { Color::GREEN } else { Color::RED },
+        );
     }
 }
 
@@ -288,6 +291,7 @@ pub enum InboundDebugVisEvent {
     PlayerPosition {
         uuid: [u8; 16],
         pos: (f64, f64, f64),
+        bot: bool,
     },
     SubChunk {
         sub_chunk: SubChunk,

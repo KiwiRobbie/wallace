@@ -9,7 +9,7 @@ use azalea::{
         query::{Added, With},
         system::{Commands, Query, Res, ResMut},
     },
-    entity::{metadata::Player, EntityUuid, LocalEntity, Position},
+    entity::{metadata::Player, EntityUuid, LocalEntity, PlayerBundle, Position},
     pathfinder::{
         goals::BlockPosGoal,
         moves::{self},
@@ -162,14 +162,15 @@ fn filter_auth_chat_content(
 }
 
 fn debug_position(
-    q_player: Query<(&EntityUuid, &Position), With<BotMarker>>,
+    q_player: Query<(&EntityUuid, &Position, Option<&BotMarker>), With<Player>>,
     debug_vis: ResMut<DebugVisChannels>,
 ) {
-    for (uuid, pos) in q_player.iter() {
+    for (uuid, pos, marker) in q_player.iter() {
         debug_vis
             .tx
             .blocking_send(InboundDebugVisEvent::PlayerPosition {
                 uuid: uuid.as_bytes().clone(),
+                bot: marker.is_some(),
                 pos: (pos.x, pos.y, pos.z),
             })
             .unwrap();

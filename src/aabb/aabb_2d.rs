@@ -175,15 +175,15 @@ impl Aabb2D {
         let left = Self {
             min_x: self.min_x,
             max_x: other.min_x,
-            max_y: self.max_y.min(other.max_y),
             min_y: self.min_y.max(other.min_y),
+            max_y: self.max_y.min(other.max_y),
         }
         .validate();
         let right = Self {
             min_x: other.max_x,
             max_x: self.max_x,
-            max_y: self.max_y.min(other.max_y),
             min_y: self.min_y.max(other.min_y),
+            max_y: self.max_y.min(other.max_y),
         }
         .validate();
 
@@ -194,16 +194,16 @@ impl Aabb2D {
     pub fn inflate(&self, amount: Vec2) -> Self {
         Self {
             min_x: self.min_x - amount.x,
-            min_y: self.min_y - amount.x,
-            max_x: self.max_x + amount.y,
+            min_y: self.min_y - amount.y,
+            max_x: self.max_x + amount.x,
             max_y: self.max_y + amount.y,
         }
     }
     pub fn translate(&self, translation: Vec2) -> Self {
         Self {
             min_x: self.min_x + translation.x,
-            min_y: self.min_y + translation.x,
-            max_x: self.max_x + translation.y,
+            min_y: self.min_y + translation.y,
+            max_x: self.max_x + translation.x,
             max_y: self.max_y + translation.y,
         }
     }

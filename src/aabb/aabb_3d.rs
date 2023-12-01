@@ -171,8 +171,12 @@ impl Aabb3D {
     }
 
     pub fn surface_projection(&self, axis: usize) -> Aabb2D {
-        let u = (axis + 1).rem_euclid(3);
-        let v = (axis + 2).rem_euclid(3);
+        let (u, v) = match axis {
+            0 => (1, 2),
+            1 => (0, 2),
+            2 => (0, 1),
+            _ => unreachable!(),
+        };
         Aabb2D {
             min_x: self.0[u],
             min_y: self.0[v],

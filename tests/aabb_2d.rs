@@ -166,3 +166,42 @@ mod aabb_2d_union {
         }
     }
 }
+
+mod aabb_2d_subtract {
+    use wallace::aabb::aabb_2d::Aabb2D;
+
+    #[test]
+    fn subtract_equal() {
+        let a = Aabb2D {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+        let b = Aabb2D {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+        let c = a.subtract(&b);
+        assert_eq!(c, vec![]);
+    }
+    #[test]
+    fn subtract_superset() {
+        let a = Aabb2D {
+            min_x: -1.0,
+            min_y: -1.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+        let b = Aabb2D {
+            min_x: -2.0,
+            min_y: -2.0,
+            max_x: 2.0,
+            max_y: 2.0,
+        };
+        let c = a.subtract(&b);
+        assert_eq!(c, vec![]);
+    }
+}

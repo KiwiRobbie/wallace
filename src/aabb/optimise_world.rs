@@ -87,6 +87,19 @@ impl NavMeshLayer {
             }
             self.nodes.remove(dirty_index);
         }
+        // for (y, row) in self.blocks.iter().enumerate() {
+        //     for (x, blocks) in row.iter().enumerate() {
+        //         for block in blocks {
+        //             assert_eq!(
+        //                 self.nodes[*block].pos,
+        //                 UVec2 {
+        //                     x: x as u32,
+        //                     y: y as u32
+        //                 }
+        //             );
+        //         }
+        //     }
+        // }
     }
 }
 
@@ -189,10 +202,15 @@ impl SubChunk {
                 let mut column_collision_blocks = 0;
                 for (y, block) in column.iter().enumerate() {
                     if block.is_some() {
-                        column_collision_blocks |= 1 << y
+                        column_collision_blocks |= 1 << y;
+                        for aabb in block.iter() {
+                            if aabb.max_y() > 1.0 {
+                                column_collision_blocks |= 2 << y; // TODO: Handle chunk boundaries
+                            }
+                        }
                     }
                     if block == &OptionalMany::Single(Aabb3D::FULL_BLOCK) {
-                        column_full_blocks |= 1 << y;
+                        column_full_blocks = 1 << y;
                     }
                 }
                 collision_blocks[z][x] = column_collision_blocks;
@@ -246,8 +264,8 @@ impl SubChunk {
             .multi_cartesian_product()
             .map(|value| {
                 let z = value[0];
-                let y = value[1];
-                let x = value[2];
+                let x = value[1];
+                let y = value[2];
                 (
                     UVec3 {
                         x: x as u32,
@@ -274,7 +292,7 @@ impl SubChunk {
             }
         }
 
-        // self.cut_floor(&mut floor);
+        self.cut_floor(&mut floor);
 
         SubChunkNavMesh {
             location: self.location,
@@ -296,24 +314,43 @@ impl SubChunk {
     fn cut_floor(&self, floor: &mut Vec<NavMeshLayer>) {
         for layer in floor {
             let height = layer.height;
-            let cut_indices = (height as usize)..((height + 1.8).ceil() as usize);
+            let cut_indices = (height as usize)..(((height + 1.8).ceil() + 0.1) as usize);
 
             for cut_layer in cut_indices.clone() {
                 for z in 0..CHUNK_WIDTH {
                     for x in 0..CHUNK_WIDTH {
-                        for aabb in self.aabbs[z][x][cut_layer].iter() {
-                            if ((cut_layer as f32 + aabb.min_y() - 1.8)
-                                ..(cut_layer as f32 + aabb.max_y()))
-                                .contains(&height)
-                            {
-                                layer.cut(
-                                    UVec2 {
-                                        x: x as u32,
-                                        y: z as u32,
-                                    },
-                                    aabb.surface_projection(1), // .inflate(Vec2 { x: 0.0, y: 0.0 })
-                                                                // .translate(Vec2 { x: 0.0, y: 0.0 }),
-                                );
+                        for dz in [-1isize, 0isize, 1isize].into_iter() {
+                            let sample_z = z as isize + dz;
+                            if !(0isize..CHUNK_WIDTH as isize).contains(&sample_z) {
+                                continue;
+                            }
+
+                            for dx in [-1isize, 0isize, 1isize].into_iter() {
+                                let sample_x = x as isize + dx;
+                                if !(0isize..CHUNK_WIDTH as isize).contains(&sample_x) {
+                                    continue;
+                                }
+                                for aabb in self.aabbs[sample_z as usize][sample_x as usize]
+                                    [cut_layer]
+                                    .iter()
+                                {
+                                    if cut_layer as f32 + aabb.min_y() - 1.8 < height
+                                        && height < cut_layer as f32 + aabb.max_y()
+                                    {
+                                        layer.cut(
+                                            UVec2 {
+                                                x: x as u32,
+                                                y: z as u32,
+                                            },
+                                            aabb.surface_projection(1)
+                                                .translate(Vec2 {
+                                                    x: dx as f32,
+                                                    y: dz as f32,
+                                                })
+                                                .inflate(Vec2::splat(0.3)),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -339,18 +376,25 @@ impl SubChunk {
                 NavMeshLayerType::Floor => aabb.max_y(),
             };
 
-        let surface = aabb.surface_projection(1);
+        let surface = aabb.surface_projection(1).inflate(Vec2::splat(0.3));
 
         // TODO: Optimise by using initial bounds for search (can't change by more that 1.5 blocks)
         match layers.binary_search_by(|layer| layer.height.partial_cmp(&height).unwrap()) {
-            Err(index) => layers.insert(
-                index,
-                NavMeshLayer {
+            Err(index) => {
+                let mut layer = NavMeshLayer {
                     height,
                     nodes: vec![],
                     blocks: Default::default(),
-                },
-            ),
+                };
+                layer.insert(
+                    surface.clone(),
+                    UVec2 {
+                        x: block_location.x,
+                        y: block_location.z,
+                    },
+                );
+                layers.insert(index, layer);
+            }
             Ok(index) => layers[index].insert(
                 surface.clone(),
                 UVec2 {
