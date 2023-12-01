@@ -1,3 +1,7 @@
+use azalea::core::aabb::AABB;
+
+use super::aabb_2d::Aabb2D;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Point3D(pub [f32; 2]);
 
@@ -5,6 +9,28 @@ pub struct Point3D(pub [f32; 2]);
 pub struct Aabb3D(pub [f32; 6]);
 
 impl Aabb3D {
+    pub fn min_x(&self) -> f32 {
+        self.0[0]
+    }
+    pub fn min_y(&self) -> f32 {
+        self.0[1]
+    }
+    pub fn min_z(&self) -> f32 {
+        self.0[2]
+    }
+
+    pub fn max_x(&self) -> f32 {
+        self.0[0 + 3]
+    }
+    pub fn max_y(&self) -> f32 {
+        self.0[1 + 3]
+    }
+    pub fn max_z(&self) -> f32 {
+        self.0[2 + 3]
+    }
+
+    pub const FULL_BLOCK: Self = Aabb3D([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+
     pub fn strict_contains(&self, p: &Point3D) -> bool {
         for axis in 0..3 {
             if self.0[axis] >= p.0[axis] || self.0[axis + 3] <= p.0[axis] {
@@ -143,6 +169,65 @@ impl Aabb3D {
         // Rectangles must have being disjoint
         return vec![a.clone(), b.clone()];
     }
+
+    pub fn surface_projection(&self, axis: usize) -> Aabb2D {
+        let u = (axis + 1).rem_euclid(3);
+        let v = (axis + 2).rem_euclid(3);
+        Aabb2D {
+            min_x: self.0[u],
+            min_y: self.0[v],
+            max_x: self.0[u + 3],
+            max_y: self.0[v + 3],
+        }
+    }
+
+    // pub fn cmp_faces(&self, other: &Self) -> [ContactType; 6] {
+    //     let mut result = [ContactType::None; 6];
+    //     for direction in 0..3 {
+    //         let self_surface = self.surface_projection(axis);
+    //         let other_surface = other.surface_projection(axis);
+
+    //         match self_surface.cmp(&other_surface) {
+    //             super::aabb_2d::Aabb2CmpResult::Superset => {
+
+    //             }
+    //             super::aabb_2d::Aabb2CmpResult::Subset => {}
+    //             super::aabb_2d::Aabb2CmpResult::Mixed => {}
+    //             super::aabb_2d::Aabb2CmpResult::None => {}
+    //         };
+    //     }
+    //     return result;
+    // }
+}
+
+impl From<AABB> for Aabb3D {
+    fn from(value: AABB) -> Self {
+        Self([
+            value.min_x as f32,
+            value.min_y as f32,
+            value.min_z as f32,
+            value.max_x as f32,
+            value.max_y as f32,
+            value.max_z as f32,
+        ])
+    }
+}
+
+pub enum Axis {
+    X,
+    Y,
+    Z,
+    NegX,
+    NegY,
+    NegZ,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ContactType {
+    Superset,
+    Subset,
+    Mixed,
+    None,
 }
 
 pub enum SupersetResult {

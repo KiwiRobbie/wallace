@@ -19,9 +19,16 @@ use azalea::{
     world::{InstanceContainer, InstanceName, MinecraftEntityId},
     BlockPos,
 };
+use bevy::{math::IVec3, render::primitives::Aabb};
 use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use wallace::aabb::{
+    aabb_3d::Aabb3D,
+    optimise_world::{
+        OptionalMany, SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
+    },
+};
 
 const OWNER: [u8; 16] = [
     0xaa, 0xf3, 0x72, 0x32, 0x31, 0x93, 0x43, 0x6b, 0xaa, 0x5b, 0x2b, 0x2b, 0x2e, 0xd0, 0xd1,
@@ -210,7 +217,7 @@ fn chat_follow_system(
                         .unwrap();
                 }
                 Some("shape") => {
-                    let radius = cmd.next().and_then(|r| r.parse::<i32>().ok()).unwrap_or(2);
+                    let radius = cmd.next().and_then(|r| r.parse::<i32>().ok()).unwrap_or(16);
                     if cmd.peek().is_none() {
                         let client_position: BlockPos = q_position
                             .get(client)
@@ -250,6 +257,62 @@ fn chat_follow_system(
                         debug_vis
                             .tx
                             .blocking_send(InboundDebugVisEvent::AddCollisions { blocks })
+                            .unwrap();
+                    }
+                }
+
+                Some("nav") => {
+                    if cmd.peek().is_none() {
+                        let client_position: BlockPos = q_position
+                            .get(client)
+                            .expect("Couldn't get client position")
+                            .clone()
+                            .into();
+                        let world_name = q_instance_name
+                            .get(client)
+                            .expect("Couldn't get world name");
+                        let world_lock = instance_container
+                            .get(&world_name)
+                            .expect("Couldn't get instance");
+
+                        let world = world_lock.read();
+
+                        let sub_chunk_index = IVec3 {
+                            x: client_position.x,
+                            y: client_position.y,
+                            z: client_position.z,
+                        }
+                        .div_euclid(SUB_CHUNK_SIZE);
+                        let sub_chunk_start = SUB_CHUNK_SIZE * sub_chunk_index;
+                        let sub_chunk_end = sub_chunk_start + SUB_CHUNK_SIZE;
+
+                        let mut sub_chunk_aabb_data: Box<
+                            [[[OptionalMany<Aabb3D>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH],
+                        > = Default::default();
+
+                        for (k, z) in (sub_chunk_start.z..sub_chunk_end.z).enumerate() {
+                            for (i, x) in (sub_chunk_start.x..sub_chunk_end.x).enumerate() {
+                                for (j, y) in (sub_chunk_start.y..sub_chunk_end.y).enumerate() {
+                                    dbg!((x, y, z));
+                                    if let Some(block) =
+                                        world.get_block_state(&BlockPos { x, y, z })
+                                    {
+                                        sub_chunk_aabb_data[k][i][j] =
+                                            Into::<OptionalMany<Aabb3D>>::into(
+                                                block.shape().to_aabbs(),
+                                            );
+                                    }
+                                }
+                            }
+                        }
+
+                        println!("Building sub chunk");
+
+                        let sub_chunk = SubChunk::new(sub_chunk_index, sub_chunk_aabb_data);
+
+                        debug_vis
+                            .tx
+                            .blocking_send(InboundDebugVisEvent::SubChunk { sub_chunk })
                             .unwrap();
                     }
                 }

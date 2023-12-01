@@ -25,19 +25,19 @@ impl Aabb2D {
         return (self.max_x - self.min_x) * (self.max_y - self.min_y);
     }
 
-    pub fn superset(&self, other: &Self) -> SupersetResult {
+    pub fn cmp(&self, other: &Self) -> Aabb2CmpResult {
         let delta_min_x = self.min_x - other.min_x;
         let delta_min_y = self.min_y - other.min_y;
         let delta_max_x = self.max_x - other.max_x;
         let delta_max_y = self.max_y - other.max_y;
 
         if delta_min_x <= 0.0 && delta_min_y <= 0.0 && delta_max_x >= 0.0 && delta_max_y >= 0.0 {
-            return SupersetResult::A;
+            return Aabb2CmpResult::Superset;
         }
         if delta_min_x >= 0.0 && delta_min_y >= 0.0 && delta_max_x <= 0.0 && delta_max_y <= 0.0 {
-            return SupersetResult::B;
+            return Aabb2CmpResult::Subset;
         }
-        SupersetResult::None
+        Aabb2CmpResult::None
     }
 
     pub fn overlaps(&self, other: &Self) -> bool {
@@ -96,10 +96,10 @@ impl Aabb2D {
     }
 
     pub fn union(&self, other: &Self) -> Vec<Self> {
-        match self.superset(other) {
-            SupersetResult::A => return vec![self.clone()],
-            SupersetResult::B => return vec![other.clone()],
-            SupersetResult::None => {}
+        match self.cmp(other) {
+            Aabb2CmpResult::Superset => return vec![self.clone()],
+            Aabb2CmpResult::Subset => return vec![other.clone()],
+            Aabb2CmpResult::None => {}
         };
 
         // check for possible clean and reorder
@@ -127,10 +127,10 @@ impl Aabb2D {
         // Try to cut b with edges of a
         if let Some((b, c)) = a.cut(b) {
             // Check if result rectangle before the cut is no longer needed
-            match a.superset(&b) {
-                SupersetResult::A => return vec![a.clone(), c],
-                SupersetResult::B => return vec![b, c],
-                SupersetResult::None => {}
+            match a.cmp(&b) {
+                Aabb2CmpResult::Superset => return vec![a.clone(), c],
+                Aabb2CmpResult::Subset => return vec![b, c],
+                Aabb2CmpResult::None => {}
             };
 
             // Since neither a/b was superset, cutting b again will produce one external piece, and one subset of a
@@ -144,9 +144,9 @@ impl Aabb2D {
     }
 }
 
-pub enum SupersetResult {
-    A,
-    B,
+pub enum Aabb2CmpResult {
+    Superset,
+    Subset,
     None,
 }
 
