@@ -15,6 +15,22 @@ pub struct Aabb2D {
 }
 
 impl Aabb2D {
+    const UNIT_SQUARE: Self = Self {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: 0.0,
+        max_y: 0.0,
+    };
+
+    pub fn clamp(&self, other: &Self) -> Self {
+        Self {
+            min_x: self.min_x.clamp(other.min_x, other.max_x),
+            min_y: self.min_y.clamp(other.min_y, other.max_y),
+            max_x: self.max_x.clamp(other.min_x, other.max_x),
+            max_y: self.max_y.clamp(other.min_y, other.max_y),
+        }
+    }
+
     pub fn contains(&self, p: &Point2D) -> bool {
         return self.min_x < p.x && self.min_y < p.y && self.max_x > p.x && self.max_y > p.y;
     }
@@ -161,26 +177,26 @@ impl Aabb2D {
         let top = Self {
             min_x: self.min_x,
             max_x: self.max_x,
+            min_y: self.min_y.max(other.max_y),
             max_y: self.max_y,
-            min_y: other.max_y,
         }
         .validate();
         let bottom = Self {
             min_x: self.min_x,
             max_x: self.max_x,
             min_y: self.min_y,
-            max_y: other.min_y,
+            max_y: self.max_y.min(other.min_y),
         }
         .validate();
         let left = Self {
             min_x: self.min_x,
-            max_x: other.min_x,
+            max_x: self.max_x.min(other.min_x),
             min_y: self.min_y.max(other.min_y),
             max_y: self.max_y.min(other.max_y),
         }
         .validate();
         let right = Self {
-            min_x: other.max_x,
+            min_x: self.min_x.max(other.max_x),
             max_x: self.max_x,
             min_y: self.min_y.max(other.min_y),
             max_y: self.max_y.min(other.max_y),

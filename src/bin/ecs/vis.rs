@@ -1,11 +1,14 @@
 use std::f32::consts::PI;
 
 use azalea::core::aabb::AABB;
-use bevy::{math::vec3, prelude::*, render::mesh::Indices, utils::HashMap};
+use bevy::{math::vec3, pbr::ExtendedMaterial, prelude::*, render::mesh::Indices, utils::HashMap};
 use tokio::sync::mpsc::{Receiver, Sender};
 use wallace::{
-    aabb::optimise_world::{
-        SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
+    aabb::{
+        debug_surface_material::DebugSurfaceMaterial,
+        optimise_world::{
+            SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
+        },
     },
     tools::mesh_builder::MeshBuilder,
 };
@@ -56,6 +59,9 @@ fn debug_vis_system(
     mut bot_channels: ResMut<BotDebugChannels>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut debug_surface_materials: ResMut<
+        Assets<ExtendedMaterial<StandardMaterial, DebugSurfaceMaterial>>,
+    >,
     mut player_paths: Local<HashMap<[u8; 16], PlayerPath>>,
     mut gizmos: Gizmos,
     q_collision_vis: Query<Entity, With<CollisionVisMarker>>,
@@ -224,11 +230,16 @@ fn debug_vis_system(
                     }
                 }
 
+                let material = ExtendedMaterial {
+                    base: StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0)),
+                    extension: DebugSurfaceMaterial { quantize_steps: 10 },
+                };
+
                 chunk_entity.insert((
                     CollisionVisMarker,
-                    PbrBundle {
+                    MaterialMeshBundle {
                         mesh: meshes.add(mesh),
-                        material: materials.add(Color::rgb(0.4, 0.6, 0.4).into()),
+                        material: debug_surface_materials.add(material),
                         transform: Transform::from_translation(
                             (sub_chunk_nav.location * SUB_CHUNK_SIZE).as_vec3(),
                         ),

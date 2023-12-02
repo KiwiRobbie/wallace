@@ -2,7 +2,7 @@ use azalea_physics::collision::BlockWithShape;
 
 use azalea::{
     app::{Plugin, Update},
-    chat::{ChatPacket, ChatReceivedEvent},
+    chat::{ChatPacket, ChatReceivedEvent, SendChatEvent},
     ecs::{
         entity::Entity,
         event::{EventReader, EventWriter},
@@ -72,6 +72,12 @@ fn main() {
             bevy::prelude::DefaultPlugins,
             DebugVisPlugin,
             RapierPhysicsPlugin::<NoUserData>::default(),
+            bevy::pbr::MaterialPlugin::<
+                bevy::pbr::ExtendedMaterial<
+                    bevy::pbr::StandardMaterial,
+                    wallace::aabb::debug_surface_material::DebugSurfaceMaterial,
+                >,
+            >::default(),
             wallace::camera_plugin::SwitchingCameraPlugin,
         ))
         .run();
@@ -131,18 +137,18 @@ fn update_owner_system(
 
 #[derive(Component)]
 struct BotMarker;
-
 fn login_system(
     mut commands: Commands,
     query: Query<Entity, (Added<MinecraftEntityId>, With<LocalEntity>)>,
-    // mut chat_events: EventWriter<SendChatEvent>,
+    mut chat_events: EventWriter<SendChatEvent>,
+    // mut q_timers: Query<(Entity, &mut LoginTimer), (With<MinecraftEntityId>, With<LocalEntity>)>,
 ) {
-    for entity_id in &query {
-        commands.entity(entity_id).insert(BotMarker);
-        // chat_events.send(SendChatEvent {
-        //     entity: entity_id,
-        //     content: "/login N333LE744WV5RBNW".to_string(),
-        // });
+    for entity in &query {
+        commands.entity(entity).insert(BotMarker);
+        chat_events.send(SendChatEvent {
+            entity,
+            content: "/login N333LE744WV5RBNW".to_string(),
+        });
     }
 }
 
@@ -294,7 +300,6 @@ fn chat_follow_system(
                         for (k, z) in (sub_chunk_start.z..sub_chunk_end.z).enumerate() {
                             for (i, x) in (sub_chunk_start.x..sub_chunk_end.x).enumerate() {
                                 for (j, y) in (sub_chunk_start.y..sub_chunk_end.y).enumerate() {
-                                    dbg!((x, y, z));
                                     if let Some(block) =
                                         world.get_block_state(&BlockPos { x, y, z })
                                     {

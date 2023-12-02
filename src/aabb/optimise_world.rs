@@ -1,5 +1,4 @@
-use bevy::math::{IVec2, IVec3, UVec2, UVec3, Vec2, Vec3};
-use bevy_rapier3d::na::ComplexField;
+use bevy::math::{IVec3, UVec2, UVec3, Vec2};
 use itertools::Itertools;
 
 use super::aabb_2d::Aabb2D;
@@ -15,7 +14,6 @@ pub const SUB_CHUNK_SIZE: IVec3 = IVec3 {
 };
 
 // Index order: data[z][x][y]
-
 pub struct SubChunkNavMesh {
     pub location: IVec3,
     pub floor: Box<[NavMeshLayer]>,
@@ -292,6 +290,7 @@ impl SubChunk {
             }
         }
 
+        self.remove_overlap_floor(&mut floor);
         self.cut_floor(&mut floor);
 
         SubChunkNavMesh {
@@ -311,56 +310,146 @@ impl SubChunk {
         }
     }
 
-    fn cut_floor(&self, floor: &mut Vec<NavMeshLayer>) {
+    fn remove_overlap_floor(&self, floor: &mut Vec<NavMeshLayer>) {
+        // remove needless overlap for inflated full blocks first
+        // doesn't work
+
         for layer in floor {
+            let mut updated_aabbs = vec![];
+            for node in layer.nodes.iter() {
+                if node.aabb
+                    == (Aabb2D {
+                        min_x: 0.3,
+                        max_x: 1.3,
+                        min_y: 0.3,
+                        max_y: 1.3,
+                    })
+                {
+                    let mut updated_aabb = node.aabb.clone();
+                    let mut self_array = updated_aabb.to_array();
+
+                    for dir in 0..=1 {
+                        for axis in 0..=1 {
+                            let target_x = ((1 - axis) * (2 * dir - 1)) as usize;
+                            let target_z = (axis * (2 * dir - 1)) as usize;
+
+                            for aabb in layer.blocks[target_z][target_x].clone() {
+                                let other_array = &layer.nodes[aabb].aabb.to_array();
+
+                                if (dir == 0 && other_array[1][axis] >= 1.0)
+                                    || (dir == 1 && other_array[0][axis] <= 0.0)
+                                {
+                                    if other_array[0][1 - axis] == self_array[0][1 - axis]
+                                        && other_array[1][1 - axis] == self_array[1][1 - axis]
+                                    {
+                                        self_array[dir][axis] =
+                                            self_array[dir][axis].clamp(0.0, 1.0);
+                                        updated_aabb = self_array.into();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    updated_aabbs.push(updated_aabb);
+                }
+            }
+            for (node, aabb) in layer.nodes.iter_mut().zip(updated_aabbs.into_iter()) {
+                node.aabb = aabb;
+            }
+        }
+
+        // reduce other sources of overlapping
+    }
+
+    fn aabb_2d_subtract_list(aabb: &Aabb2D, others: &[Aabb2D]) -> Vec<Aabb2D> {
+        let mut result = vec![];
+        let mut cutting_stack = vec![aabb.clone()];
+        'next_aabb: while let Some(aabb) = cutting_stack.pop() {
+            for other in others {
+                let cut = aabb.subtract(&other);
+                if cut.len() > 1 || Some(&aabb) != cut.first() {
+                    cutting_stack.extend(cut.into_iter());
+                    continue 'next_aabb;
+                }
+            }
+            result.push(aabb);
+        }
+        result
+    }
+
+    fn cut_floor(&self, floor: &mut Vec<NavMeshLayer>) {
+        for layer in floor.iter_mut() {
             let height = layer.height;
             let cut_indices = (height as usize)..(((height + 1.8).ceil() + 0.1) as usize);
 
-            for cut_layer in cut_indices.clone() {
-                for z in 0..CHUNK_WIDTH {
-                    for x in 0..CHUNK_WIDTH {
+            let mut new_nodes: Vec<(UVec2, Aabb2D)> = vec![];
+            for block in layer.blocks.iter_mut().flatten() {
+                block.clear();
+            }
+
+            for node in layer.nodes.drain(0..layer.nodes.len()) {
+                let mut cutting_stack = vec![node.aabb.clone()];
+                'next_aabb: while let Some(aabb) = cutting_stack.pop() {
+                    for cut_layer in cut_indices.clone() {
                         for dz in [-1isize, 0isize, 1isize].into_iter() {
-                            let sample_z = z as isize + dz;
+                            let sample_z = node.pos.y as isize + dz;
                             if !(0isize..CHUNK_WIDTH as isize).contains(&sample_z) {
                                 continue;
                             }
-
                             for dx in [-1isize, 0isize, 1isize].into_iter() {
-                                let sample_x = x as isize + dx;
+                                let sample_x = node.pos.x as isize + dx;
                                 if !(0isize..CHUNK_WIDTH as isize).contains(&sample_x) {
                                     continue;
                                 }
-                                for aabb in self.aabbs[sample_z as usize][sample_x as usize]
+                                for cutting_aabb in self.aabbs[sample_z as usize][sample_x as usize]
                                     [cut_layer]
                                     .iter()
                                 {
-                                    if cut_layer as f32 + aabb.min_y() - 1.8 < height
-                                        && height < cut_layer as f32 + aabb.max_y()
+                                    if cut_layer as f32 + cutting_aabb.min_y() - 1.8 < height
+                                        && height < cut_layer as f32 + cutting_aabb.max_y()
                                     {
-                                        layer.cut(
-                                            UVec2 {
-                                                x: x as u32,
-                                                y: z as u32,
-                                            },
-                                            aabb.surface_projection(1)
+                                        let cut = aabb.subtract(
+                                            &cutting_aabb
+                                                .surface_projection(1)
                                                 .translate(Vec2 {
                                                     x: dx as f32,
                                                     y: dz as f32,
                                                 })
                                                 .inflate(Vec2::splat(0.3)),
                                         );
+
+                                        if cut.len() > 1 || Some(&aabb) != cut.first() {
+                                            cutting_stack.extend(cut.into_iter());
+                                            continue 'next_aabb;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    new_nodes.push((
+                        UVec2 {
+                            x: node.pos.x,
+                            y: node.pos.y,
+                        },
+                        aabb.clone(),
+                    ));
                 }
+            }
+
+            for (pos, aabb) in new_nodes.into_iter() {
+                layer.blocks[pos.y as usize][pos.x as usize].push(layer.nodes.len());
+                layer.nodes.push(NavMeshNode {
+                    aabb,
+                    pos,
+                    adjacent: vec![],
+                });
             }
         }
     }
 
     /// Occlude self using another sub chunk
-    fn apply_other_occlusion(&mut self, other: &Self) {
+    fn _apply_other_occlusion(&mut self, _other: &Self) {
         todo!();
     }
 

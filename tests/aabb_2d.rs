@@ -204,4 +204,38 @@ mod aabb_2d_subtract {
         let c = a.subtract(&b);
         assert_eq!(c, vec![]);
     }
+    #[test]
+    fn subtract_disjoint() {
+        let a = Aabb2D {
+            min_x: -1.0,
+            min_y: -1.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+        let b = Aabb2D {
+            min_x: 1.0,
+            min_y: 1.0,
+            max_x: -1.0,
+            max_y: 3.0,
+        };
+        let c = a.subtract(&b);
+        assert_eq!(c, vec![a]);
+    }
+    #[test]
+    fn subtract_strictly_disjoint() {
+        let a = Aabb2D {
+            min_x: -1.0,
+            min_y: -1.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+        let b = Aabb2D {
+            min_x: 1.0,
+            min_y: 2.0,
+            max_x: -1.0,
+            max_y: 4.0,
+        };
+        let c = a.subtract(&b);
+        assert_eq!(c, vec![a]);
+    }
 }
