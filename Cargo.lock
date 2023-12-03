@@ -4936,6 +4936,7 @@ dependencies = [
  "bevy_rapier3d",
  "itertools",
  "parking_lot",
+ "smallvec",
  "tokio",
  "uuid",
 ]

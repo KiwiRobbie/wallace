@@ -9,7 +9,7 @@ use azalea::{
         query::{Added, With},
         system::{Commands, Query, Res, ResMut},
     },
-    entity::{metadata::Player, EntityUuid, LocalEntity, PlayerBundle, Position},
+    entity::{metadata::Player, EntityUuid, LocalEntity, Position},
     pathfinder::{
         goals::BlockPosGoal,
         moves::{self},
@@ -19,15 +19,14 @@ use azalea::{
     world::{InstanceContainer, InstanceName, MinecraftEntityId},
     BlockPos,
 };
-use bevy::{math::IVec3, render::primitives::Aabb};
+use bevy::math::IVec3;
 use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
+use smallvec::SmallVec;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use wallace::aabb::{
     aabb_3d::Aabb3D,
-    optimise_world::{
-        OptionalMany, SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
-    },
+    optimise_world::{SubChunk, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE},
 };
 
 const OWNER: [u8; 16] = [
@@ -303,17 +302,20 @@ fn chat_follow_system(
                     let sub_chunk_end = sub_chunk_start + SUB_CHUNK_SIZE;
 
                     let mut sub_chunk_aabb_data: Box<
-                        [[[OptionalMany<Aabb3D>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH],
+                        [[[SmallVec<[Aabb3D; 1]>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH],
                     > = Default::default();
 
                     for (k, z) in (sub_chunk_start.z..sub_chunk_end.z).enumerate() {
                         for (i, x) in (sub_chunk_start.x..sub_chunk_end.x).enumerate() {
                             for (j, y) in (sub_chunk_start.y..sub_chunk_end.y).enumerate() {
                                 if let Some(block) = world.get_block_state(&BlockPos { x, y, z }) {
-                                    sub_chunk_aabb_data[k][i][j] =
-                                        Into::<OptionalMany<Aabb3D>>::into(
-                                            block.shape().to_aabbs(),
-                                        );
+                                    sub_chunk_aabb_data[k][i][j] = SmallVec::from_iter(
+                                        block
+                                            .shape()
+                                            .to_aabbs()
+                                            .into_iter()
+                                            .map(|aabb| aabb.into()),
+                                    )
                                 }
                             }
                         }

@@ -15,13 +15,6 @@ pub struct Aabb2D {
 }
 
 impl Aabb2D {
-    const UNIT_SQUARE: Self = Self {
-        min_x: 0.0,
-        min_y: 0.0,
-        max_x: 0.0,
-        max_y: 0.0,
-    };
-
     pub fn clamp(&self, other: &Self) -> Self {
         Self {
             min_x: self.min_x.clamp(other.min_x, other.max_x),

@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use azalea::core::aabb::AABB;
 use bevy::{math::vec3, pbr::ExtendedMaterial, prelude::*, render::mesh::Indices, utils::HashMap};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -7,9 +5,7 @@ use wallace::{
     aabb::{
         debug_aabb_material::DebugAabbMaterial,
         debug_surface_material::DebugSurfaceMaterial,
-        optimise_world::{
-            SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
-        },
+        optimise_world::{SubChunk, SubChunkNavMesh, SUB_CHUNK_SIZE},
     },
     tools::mesh_builder::MeshBuilder,
 };
@@ -252,21 +248,19 @@ fn debug_vis_system(
             InboundDebugVisEvent::SubChunk { sub_chunk } => {
                 let mut collider_mesh_builder = MeshBuilder::new();
 
-                for (pos, aabbs) in sub_chunk.iter_collisions() {
-                    for aabb in aabbs {
-                        collider_mesh_builder.add_mesh(
-                            &shape::Box {
-                                min_x: aabb.min_x() as f32,
-                                min_y: aabb.min_y() as f32,
-                                min_z: aabb.min_z() as f32,
-                                max_x: aabb.max_x() as f32,
-                                max_y: aabb.max_y() as f32,
-                                max_z: aabb.max_z() as f32,
-                            }
-                            .into(),
-                            Transform::from_translation(pos.as_vec3()),
-                        );
-                    }
+                for (pos, aabb) in sub_chunk.iter_collisions() {
+                    collider_mesh_builder.add_mesh(
+                        &shape::Box {
+                            min_x: aabb.min_x() as f32,
+                            min_y: aabb.min_y() as f32,
+                            min_z: aabb.min_z() as f32,
+                            max_x: aabb.max_x() as f32,
+                            max_y: aabb.max_y() as f32,
+                            max_z: aabb.max_z() as f32,
+                        }
+                        .into(),
+                        Transform::from_translation(pos.as_vec3()),
+                    );
                 }
 
                 commands.spawn((
