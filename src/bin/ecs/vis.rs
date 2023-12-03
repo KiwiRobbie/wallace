@@ -5,6 +5,7 @@ use bevy::{math::vec3, pbr::ExtendedMaterial, prelude::*, render::mesh::Indices,
 use tokio::sync::mpsc::{Receiver, Sender};
 use wallace::{
     aabb::{
+        debug_aabb_material::DebugAabbMaterial,
         debug_surface_material::DebugSurfaceMaterial,
         optimise_world::{
             SubChunk, SubChunkNavMesh, CHUNK_WIDTH, SUB_CHUNK_HEIGHT, SUB_CHUNK_SIZE,
@@ -62,6 +63,7 @@ fn debug_vis_system(
     mut debug_surface_materials: ResMut<
         Assets<ExtendedMaterial<StandardMaterial, DebugSurfaceMaterial>>,
     >,
+    mut debug_aabb_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, DebugAabbMaterial>>>,
     mut player_paths: Local<HashMap<[u8; 16], PlayerPath>>,
     mut gizmos: Gizmos,
     q_collision_vis: Query<Entity, With<CollisionVisMarker>>,
@@ -269,9 +271,15 @@ fn debug_vis_system(
 
                 commands.spawn((
                     CollisionVisMarker,
-                    PbrBundle {
+                    MaterialMeshBundle {
                         mesh: meshes.add(collider_mesh_builder.build()),
-                        material: materials.add(Color::BLUE.into()),
+                        material: debug_aabb_materials.add(ExtendedMaterial {
+                            base: Color::WHITE.into(),
+                            extension: DebugAabbMaterial { quantize_steps: 0 },
+                        }),
+                        transform: Transform::from_translation(
+                            (sub_chunk.location * SUB_CHUNK_SIZE).as_vec3(),
+                        ),
                         ..default()
                     },
                 ));

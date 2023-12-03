@@ -9,8 +9,6 @@
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 }
 
-
-
 struct VertexOutput {
     // This is `clip position` when the struct is used as a vertex stage output
     // and `frag coord` when used as a fragment stage input
@@ -106,9 +104,9 @@ fn vertex(vertex_no_morph: Vertex, @builtin(vertex_index) vertex_index: u32) -> 
     // This can be removed when wgpu 0.19 is released
     out.position.x += min(f32(get_instance_index(0u)), 0.0);
 #endif
-    out.instance_index = u32(f32(vertex_index) / 4.0)  ;
+    out.instance_index = u32(f32(vertex_index) / 8.0)  ;
     // out.position.y += 0.5 * fract(f32(out.instance_index ) * 1234.812343);
-    out.position.z += 1e-6 ;
+    // out.position.z += 1e-6 ;
     return out;
 }
 
@@ -116,6 +114,12 @@ fn vertex(vertex_no_morph: Vertex, @builtin(vertex_index) vertex_index: u32) -> 
 
 
 
+
+fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
+    let K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    let p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), c.y);
+}
 
 @fragment
 fn fragment(
@@ -128,15 +132,12 @@ fn fragment(
     // we can optionally modify the input before lighting and alpha_discard is applied
     // pbr_input.material.base_color = fract(pbr_input.world_position / 32.0);
     // pbr_input.material.base_color = vec4<f32>(0.0);
+    pbr_input.material.base_color = vec4<f32>(hsv2rgb(vec3<f32>(0.5 * rand11(f32(in.instance_index)), 0.8, 1.0)), 1.0);
 
-    pbr_input.material.base_color = vec4<f32>(hsv2rgb(vec3<f32>(0.5 + 0.5 * rand11(f32(in.instance_index)), 0.8, 1.0)), 1.0);
-
+    // pbr_input.material.base_color = vec4<f32>(0.5 + 0.4 * cos(f32(in.instance_index) * 353876.262945286));
 
     // alpha discard
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
-
-
-
 
 #ifdef PREPASS_PIPELINE
     // in deferred mode we can't modify anything after that, as lighting is run in a separate fullscreen shader.
@@ -154,13 +155,6 @@ fn fragment(
 #endif
 
     return out;
-}
-
-
-fn hsv2rgb(c: vec3<f32>) -> vec3<f32> {
-    let K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    let p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), c.y);
 }
 
 

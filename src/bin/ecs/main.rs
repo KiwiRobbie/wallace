@@ -78,6 +78,12 @@ fn main() {
                     wallace::aabb::debug_surface_material::DebugSurfaceMaterial,
                 >,
             >::default(),
+            bevy::pbr::MaterialPlugin::<
+                bevy::pbr::ExtendedMaterial<
+                    bevy::pbr::StandardMaterial,
+                    wallace::aabb::debug_aabb_material::DebugAabbMaterial,
+                >,
+            >::default(),
             wallace::camera_plugin::SwitchingCameraPlugin,
         ))
         .run();
@@ -269,63 +275,90 @@ fn chat_follow_system(
                 }
 
                 Some("nav") => {
-                    if cmd.peek().is_none() {
-                        let client_position: BlockPos = q_position
-                            .get(client)
-                            .expect("Couldn't get client position")
-                            .clone()
-                            .into();
-                        let world_name = q_instance_name
-                            .get(client)
-                            .expect("Couldn't get world name");
-                        let world_lock = instance_container
-                            .get(&world_name)
-                            .expect("Couldn't get instance");
+                    let t_start = std::time::Instant::now();
 
-                        let world = world_lock.read();
+                    let client_position: BlockPos = q_position
+                        .get(client)
+                        .expect("Couldn't get client position")
+                        .clone()
+                        .into();
+                    let world_name = q_instance_name
+                        .get(client)
+                        .expect("Couldn't get world name");
+                    let world_lock = instance_container
+                        .get(&world_name)
+                        .expect("Couldn't get instance");
 
-                        let sub_chunk_index = IVec3 {
-                            x: client_position.x,
-                            y: client_position.y,
-                            z: client_position.z,
-                        }
-                        .div_euclid(SUB_CHUNK_SIZE);
-                        let sub_chunk_start = SUB_CHUNK_SIZE * sub_chunk_index;
-                        let sub_chunk_end = sub_chunk_start + SUB_CHUNK_SIZE;
+                    let world = world_lock.read();
 
-                        let mut sub_chunk_aabb_data: Box<
-                            [[[OptionalMany<Aabb3D>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH],
-                        > = Default::default();
+                    let t_world_locked = std::time::Instant::now();
 
-                        for (k, z) in (sub_chunk_start.z..sub_chunk_end.z).enumerate() {
-                            for (i, x) in (sub_chunk_start.x..sub_chunk_end.x).enumerate() {
-                                for (j, y) in (sub_chunk_start.y..sub_chunk_end.y).enumerate() {
-                                    if let Some(block) =
-                                        world.get_block_state(&BlockPos { x, y, z })
-                                    {
-                                        sub_chunk_aabb_data[k][i][j] =
-                                            Into::<OptionalMany<Aabb3D>>::into(
-                                                block.shape().to_aabbs(),
-                                            );
-                                    }
+                    let sub_chunk_index = IVec3 {
+                        x: client_position.x,
+                        y: client_position.y,
+                        z: client_position.z,
+                    }
+                    .div_euclid(SUB_CHUNK_SIZE);
+                    let sub_chunk_start = SUB_CHUNK_SIZE * sub_chunk_index;
+                    let sub_chunk_end = sub_chunk_start + SUB_CHUNK_SIZE;
+
+                    let mut sub_chunk_aabb_data: Box<
+                        [[[OptionalMany<Aabb3D>; SUB_CHUNK_HEIGHT]; CHUNK_WIDTH]; CHUNK_WIDTH],
+                    > = Default::default();
+
+                    for (k, z) in (sub_chunk_start.z..sub_chunk_end.z).enumerate() {
+                        for (i, x) in (sub_chunk_start.x..sub_chunk_end.x).enumerate() {
+                            for (j, y) in (sub_chunk_start.y..sub_chunk_end.y).enumerate() {
+                                if let Some(block) = world.get_block_state(&BlockPos { x, y, z }) {
+                                    sub_chunk_aabb_data[k][i][j] =
+                                        Into::<OptionalMany<Aabb3D>>::into(
+                                            block.shape().to_aabbs(),
+                                        );
                                 }
                             }
                         }
+                    }
 
-                        println!("Building Sub Chunk");
+                    let t_copied_data = std::time::Instant::now();
 
-                        let sub_chunk = SubChunk::new(sub_chunk_index, sub_chunk_aabb_data);
-                        let nav = sub_chunk.build_nav_mesh();
-                        println!("Built Nav Mesh");
+                    let sub_chunk = SubChunk::new(sub_chunk_index, sub_chunk_aabb_data);
+                    let t_sub_chunk = std::time::Instant::now();
 
-                        debug_vis
+                    let nav = sub_chunk.build_nav_mesh();
+                    let t_nav_mesh = std::time::Instant::now();
+
+                    println!(
+                        "Processed Sub Chunk in {:0.2}ms",
+                        (t_nav_mesh - t_start).as_secs_f32() * 1000.0
+                    );
+                    println!(
+                        "\tWorld lock: {:0.2}ms",
+                        (t_world_locked - t_start).as_secs_f32() * 1000.0
+                    );
+
+                    println!(
+                        "\tWorld copy: {:0.2}ms",
+                        (t_copied_data - t_world_locked).as_secs_f32() * 1000.0
+                    );
+                    println!(
+                        "\tSub Chunk build: {:0.2}ms",
+                        (t_sub_chunk - t_copied_data).as_secs_f32() * 1000.0
+                    );
+                    println!(
+                        "\tNav mesh build: {:0.2}ms",
+                        (t_nav_mesh - t_sub_chunk).as_secs_f32() * 1000.0
+                    );
+
+                    match cmd.next() {
+                        Some("surf") if cmd.peek().is_none() => debug_vis
                             .tx
                             .blocking_send(InboundDebugVisEvent::NavMesh { sub_chunk_nav: nav })
-                            .unwrap();
-                        debug_vis
+                            .unwrap(),
+                        Some("chunk") if cmd.peek().is_none() => debug_vis
                             .tx
                             .blocking_send(InboundDebugVisEvent::SubChunk { sub_chunk })
-                            .unwrap();
+                            .unwrap(),
+                        _ => {}
                     }
                 }
 

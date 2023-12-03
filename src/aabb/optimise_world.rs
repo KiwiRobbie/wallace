@@ -380,7 +380,8 @@ impl SubChunk {
     fn cut_floor(&self, floor: &mut Vec<NavMeshLayer>) {
         for layer in floor.iter_mut() {
             let height = layer.height;
-            let cut_indices = (height as usize)..(((height + 1.8).ceil() + 0.1) as usize);
+            let cut_indices = (height.max(0.0) as usize)
+                ..(((height + 1.8).ceil() + 0.1) as usize).min(SUB_CHUNK_HEIGHT - 1);
 
             let mut new_nodes: Vec<(UVec2, Aabb2D)> = vec![];
             for block in layer.blocks.iter_mut().flatten() {
