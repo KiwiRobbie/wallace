@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use bevy::math::{IVec2, IVec3, UVec2, UVec3, Vec2};
 
 use smallvec::{smallvec, SmallVec};
@@ -148,28 +150,6 @@ impl SubChunk {
                 None
             }
         })
-
-        // [(0..CHUNK_WIDTH), (0..CHUNK_WIDTH), (0..SUB_CHUNK_HEIGHT)]
-        //     .into_iter()
-        //     .multi_cartesian_product()
-        //     .flat_map(|value| {
-        //         let z = value[0];
-        //         let y = value[1];
-        //         let x = value[2];
-
-        //         if self.block_floor_mask[z][x] >> y & 1 == 1 {
-        //             Some((
-        //                 UVec3 {
-        //                     x: x as u32,
-        //                     y: y as u32,
-        //                     z: z as u32,
-        //                 },
-        //                 Into::<&[_]>::into(&self.aabbs[z][x][y]),
-        //             ))
-        //         } else {
-        //             None
-        //         }
-        //     })
     }
 
     pub fn iter_ceiling(&self) -> impl Iterator<Item = (UVec3, &Aabb3D)> {
@@ -212,53 +192,125 @@ impl SubChunk {
         }
     }
 
+    pub fn apply_greedy_meshing(&mut self) {
+        fn check_mask(mask: &[[u16; CHUNK_WIDTH]; CHUNK_WIDTH], pos: &[usize; 3]) -> bool {
+            return mask[pos[2]][pos[0]] & (1 << pos[1]) != 0;
+        }
+        fn set_mask(mask: &mut [[u16; CHUNK_WIDTH]; CHUNK_WIDTH], pos: &[usize; 3], value: bool) {
+            mask[pos[2]][pos[0]] |= (value as u16) << pos[1];
+        }
+
+        let mut visited = Box::new([[0u16; CHUNK_WIDTH]; CHUNK_WIDTH]);
+
+        // First apply to full blocks
+        for start_index in 0..CHUNK_WIDTH * CHUNK_WIDTH * SUB_CHUNK_HEIGHT {
+            let start_y = start_index.rem_euclid(SUB_CHUNK_HEIGHT);
+            let start_x = start_index
+                .div_euclid(SUB_CHUNK_HEIGHT)
+                .rem_euclid(CHUNK_WIDTH);
+            let start_z = start_index
+                .div_euclid(SUB_CHUNK_HEIGHT * CHUNK_WIDTH)
+                .rem_euclid(CHUNK_WIDTH);
+            let start = [start_x, start_y, start_z];
+
+            // Skip to first valid, unvisited coordinate
+            if check_mask(&visited, &start) || !check_mask(&self.full_block_mask, &start) {
+                continue;
+            }
+
+            // End point exclusive
+            let mut end = [start_x + 1, start_y + 1, start_z + 1];
+
+            // For each axis find maximum expansion
+            for axis in 0usize..3usize {
+                let u_axis: usize = (axis + 1).rem_euclid(3);
+                let v_axis: usize = (axis + 2).rem_euclid(3);
+
+                loop {
+                    let mut valid = true;
+                    'check_expansion: for u in start[u_axis]..end[u_axis] {
+                        for v in start[u_axis]..end[u_axis] {
+                            let mut pos = end.clone();
+                            pos[u_axis] = u;
+                            pos[v_axis] = v;
+
+                            if check_mask(&visited, &start)
+                                || !check_mask(&self.full_block_mask, &start)
+                            {
+                                valid = false;
+                                break 'check_expansion;
+                            } else {
+                                set_mask(&mut visited, &pos, true);
+                            }
+                        }
+                    }
+                    if valid {
+                        // Update visited mask with new blocks
+                        for u in start[u_axis]..end[u_axis] {
+                            for v in start[u_axis]..end[u_axis] {
+                                let mut pos = end.clone();
+                                pos[u_axis] = u;
+                                pos[v_axis] = v;
+                                set_mask(&mut visited, &pos, true);
+                            }
+                        }
+                        end[axis] += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            dbg!(start, end);
+        }
+    }
+
     fn remove_overlap_floor(&self, floor: &mut Vec<NavMeshLayer>) {
         // remove needless overlap for inflated full blocks first
         // doesn't work
 
-        for layer in floor {
-            let mut updated_aabbs = vec![];
-            for node in layer.nodes.iter() {
-                if node.aabb
-                    == (Aabb2D {
-                        min_x: 0.3,
-                        max_x: 1.3,
-                        min_y: 0.3,
-                        max_y: 1.3,
-                    })
-                {
-                    let mut updated_aabb = node.aabb.clone();
-                    let mut self_array = updated_aabb.to_array();
+        // for layer in floor {
+        //     let mut updated_aabbs = vec![];
+        //     for node in layer.nodes.iter() {
+        //         if node.aabb
+        //             == (Aabb2D {
+        //                 min_x: 0.3,
+        //                 max_x: 1.3,
+        //                 min_y: 0.3,
+        //                 max_y: 1.3,
+        //             })
+        //         {
+        //             let mut updated_aabb = node.aabb.clone();
+        //             let mut self_array = updated_aabb.to_array();
 
-                    for dir in 0..=1 {
-                        for axis in 0..=1 {
-                            let target_x = ((1 - axis) * (2 * dir - 1)) as usize;
-                            let target_z = (axis * (2 * dir - 1)) as usize;
+        //             for dir in 0..=1 {
+        //                 for axis in 0..=1 {
+        //                     let target_x = ((1 - axis) * (2 * dir - 1)) as usize;
+        //                     let target_z = (axis * (2 * dir - 1)) as usize;
 
-                            for aabb in layer.blocks[target_z][target_x].clone() {
-                                let other_array = &layer.nodes[aabb].aabb.to_array();
+        //                     for aabb in layer.blocks[target_z][target_x].clone() {
+        //                         let other_array = &layer.nodes[aabb].aabb.to_array();
 
-                                if (dir == 0 && other_array[1][axis] >= 1.0)
-                                    || (dir == 1 && other_array[0][axis] <= 0.0)
-                                {
-                                    if other_array[0][1 - axis] == self_array[0][1 - axis]
-                                        && other_array[1][1 - axis] == self_array[1][1 - axis]
-                                    {
-                                        self_array[dir][axis] =
-                                            self_array[dir][axis].clamp(0.0, 1.0);
-                                        updated_aabb = self_array.into();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    updated_aabbs.push(updated_aabb);
-                }
-            }
-            for (node, aabb) in layer.nodes.iter_mut().zip(updated_aabbs.into_iter()) {
-                node.aabb = aabb;
-            }
-        }
+        //                         if (dir == 0 && other_array[1][axis] >= 1.0)
+        //                             || (dir == 1 && other_array[0][axis] <= 0.0)
+        //                         {
+        //                             if other_array[0][1 - axis] == self_array[0][1 - axis]
+        //                                 && other_array[1][1 - axis] == self_array[1][1 - axis]
+        //                             {
+        //                                 self_array[dir][axis] =
+        //                                     self_array[dir][axis].clamp(0.0, 1.0);
+        //                                 updated_aabb = self_array.into();
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //             updated_aabbs.push(updated_aabb);
+        //         }
+        //     }
+        //     for (node, aabb) in layer.nodes.iter_mut().zip(updated_aabbs.into_iter()) {
+        //         node.aabb = aabb;
+        //     }
+        // }
 
         // reduce other sources of overlapping
     }
@@ -278,16 +330,12 @@ impl SubChunk {
                 let mut cutting_stack = vec![node.aabb.clone()];
                 'next_aabb: while let Some(aabb) = cutting_stack.pop() {
                     for cut_layer in cut_indices.clone() {
-                        for dz in [-1isize, 0isize, 1isize].into_iter() {
-                            let sample_z = node.pos.y as isize + dz;
-                            if !(0isize..CHUNK_WIDTH as isize).contains(&sample_z) {
-                                continue;
-                            }
-                            for dx in [-1isize, 0isize, 1isize].into_iter() {
-                                let sample_x = node.pos.x as isize + dx;
-                                if !(0isize..CHUNK_WIDTH as isize).contains(&sample_x) {
-                                    continue;
-                                }
+                        for sample_z in (node.pos.y as isize - 1).max(0isize)
+                            ..=(node.pos.y as isize + 1).min(CHUNK_WIDTH as isize - 1)
+                        {
+                            for sample_x in (node.pos.x as isize - 1).max(0isize)
+                                ..=(node.pos.x as isize + 1).min(CHUNK_WIDTH as isize - 1)
+                            {
                                 for (cutting_aabb_pos, cutting_aabb) in self.blocks
                                     [sample_z as usize][sample_x as usize][cut_layer]
                                     .iter()
